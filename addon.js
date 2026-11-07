@@ -1,4 +1,4 @@
-const { addonBuilder, serveHTTP } = require("stremio-addon-sdk");
+﻿const { addonBuilder, serveHTTP } = require("stremio-addon-sdk");
 const { parseChannels, dedupeChannels } = require("./parse-m3u");
 
 const PORT = process.env.PORT || 7000;
@@ -11,6 +11,9 @@ const DONATE_ID = "zintv:doacao";
 const DONATE_NAME = "🤝 ZINTV BR - APOIE O CANAL";
 const DONATE_DESC =
   "🤝 ESTE ADDON É MANTIDO POR DOAÇÕES DOS USUÁRIOS. ACESSE: LIVEPIX.GG/DRINKZIN E FAÇA SUA CONTRIBUIÇÃO PARA CONTINUARMOS DE PÉ! ✨🙏";
+const DONATE_LINKS = [
+  { name: "💸 Apoiar via LivePix", category: "Donation", url: DONATE_URL }
+];
 
 // Listas M3U configuradas (aceita varias, separadas por virgula)
 const M3U_URLS = process.env.M3U_URLS
@@ -24,7 +27,7 @@ if (!M3U_URLS.length) M3U_URLS.push(DEFAULT_LIST);
 
 const manifest = {
   id: "com.drinkzin.zintvbr",
-  version: "1.2.0",
+  version: "1.3.0",
   name: "ZinTV BR",
   description: "Canais de TV aberta do Brasil ao vivo. Feito por drinkzin.",
   logo: LOGO,
@@ -34,7 +37,7 @@ const manifest = {
   catalogs: [
     {
       type: "tv",
-      id: "zintv_catalog",
+      id: "zintv_canais",
       name: "ZinTV BR",
       extra: [
         { name: "search", isRequired: false },
@@ -90,7 +93,7 @@ async function loadList() {
 }
 
 builder.defineCatalogHandler(async ({ type, id, extra }) => {
-  if (type !== "tv" || id !== "zintv_catalog") return { metas: [] };
+  if (type !== "tv" || id !== "zintv_canais") return { metas: [] };
 
   if (!channels.length) await loadList();
 
@@ -124,7 +127,7 @@ builder.defineCatalogHandler(async ({ type, id, extra }) => {
       posterShape: "square",
       description: DONATE_DESC,
       genres: ["💸 Apoie o ZinTV BR"],
-      links: [{ name: "💸 Apoiar via LivePix", category: "Donation", url: DONATE_URL }]
+      links: DONATE_LINKS
     });
   }
 
@@ -144,7 +147,7 @@ builder.defineMetaHandler(async ({ type, id }) => {
         posterShape: "square",
         description: DONATE_DESC,
         genres: ["💸 Apoie o ZinTV BR"],
-        links: [{ name: "💸 Apoiar via LivePix", category: "Donation", url: DONATE_URL }]
+        links: DONATE_LINKS
       }
     };
   }
@@ -162,7 +165,9 @@ builder.defineMetaHandler(async ({ type, id }) => {
       poster: c.logo || LOGO,
       posterShape: "square",
       description: `Canal ao vivo • ${c.group}`,
-      genres: [c.group]
+      genres: [c.group],
+      // Atalho de doacao tambem na pagina de cada canal
+      links: DONATE_LINKS
     }
   };
 });
