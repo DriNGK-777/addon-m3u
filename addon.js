@@ -17,7 +17,7 @@ const LOGO_SVG = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'>
   <rect x='20' y='20' width='216' height='216' rx='36' fill='none' stroke='#00d4ff' stroke-width='3' stroke-opacity='0.3'/>
   <text x='128' y='168' font-family='Arial Black,sans-serif' font-size='96' font-weight='900' text-anchor='middle' fill='url(#txt)'>M3U</text>
 </svg>`;
-const LOGO = `data:image/svg+xml;base64,${Buffer.from(LOGO_SVG).toString("base64")}`;
+const LOGO = "https://i.imgur.com/bKRaWKQ.jpeg";
 
 const PORT         = process.env.PORT || 7000;
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
@@ -181,10 +181,10 @@ function startKeepAlive() {
 }
 
 const manifest = {
-  id:          "com.esmequinn.m3u",
+  id:          "com.drinkzin.zintvbr",
   version:     "1.0.0",
-  name:        "M3U IPTV",
-  description: "Tu lista M3U con búsqueda automática de IDs IMDb",
+  name:        "ZinTV BR",
+  description: "Canais, filmes e séries do Brasil. Feito por drinkzin.",
   logo:        LOGO,
   resources:   ["catalog", "stream", "meta"],
   types:       ["movie", "series"],
@@ -192,7 +192,7 @@ const manifest = {
     {
       type:  "movie",
       id:    "m3u_movies",
-      name:  "🎬 Mis Películas",
+      name:  "🎬 Filmes",
       extra: [
         { name: "search", isRequired: false },
         { name: "skip",   isRequired: false }
@@ -201,7 +201,7 @@ const manifest = {
     {
       type:  "series",
       id:    "m3u_series",
-      name:  "📺 Mis Series",
+      name:  "📺 Séries",
       extra: [
         { name: "search", isRequired: false },
         { name: "skip",   isRequired: false }
