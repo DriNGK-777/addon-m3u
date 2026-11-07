@@ -27,7 +27,7 @@ if (!M3U_URLS.length) M3U_URLS.push(DEFAULT_LIST);
 
 const manifest = {
   id: "com.drinkzin.zintvbr",
-  version: "1.3.0",
+  version: "1.3.1",
   name: "ZinTV BR",
   description: "Canais de TV aberta do Brasil ao vivo. Feito por drinkzin.",
   logo: LOGO,
