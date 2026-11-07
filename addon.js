@@ -5,6 +5,13 @@ const PORT = process.env.PORT || 7000;
 const LOGO = "https://i.imgur.com/bKRaWKQ.jpeg";
 const DEFAULT_LIST = "https://iptv-org.github.io/iptv/countries/br.m3u";
 
+// Item fixado no topo do catalogo: botao de doacao (LivePix)
+const DONATE_URL = "https://livepix.gg/drinkzin";
+const DONATE_ID = "zintv:doacao";
+const DONATE_NAME = "🤝 ZINTV BR - APOIE O CANAL";
+const DONATE_DESC =
+  "🤝 ESTE ADDON É MANTIDO POR DOAÇÕES DOS USUÁRIOS. ACESSE: LIVEPIX.GG/DRINKZIN E FAÇA SUA CONTRIBUIÇÃO PARA CONTINUARMOS DE PÉ! ✨🙏";
+
 // Listas M3U configuradas (aceita varias, separadas por virgula)
 const M3U_URLS = process.env.M3U_URLS
   ? process.env.M3U_URLS.split(",").map((u) => u.trim()).filter(Boolean)
@@ -17,7 +24,7 @@ if (!M3U_URLS.length) M3U_URLS.push(DEFAULT_LIST);
 
 const manifest = {
   id: "com.drinkzin.zintvbr",
-  version: "1.1.0",
+  version: "1.2.0",
   name: "ZinTV BR",
   description: "Canais de TV aberta do Brasil ao vivo. Feito por drinkzin.",
   logo: LOGO,
@@ -98,20 +105,50 @@ builder.defineCatalogHandler(async ({ type, id, extra }) => {
 
   const page = list.slice(skip, skip + PAGE);
 
-  return {
-    metas: page.map((c) => ({
-      id: channelId(c),
+  const metas = page.map((c) => ({
+    id: channelId(c),
+    type: "tv",
+    name: c.name,
+    poster: c.logo || LOGO,
+    posterShape: "square",
+    genres: [c.group]
+  }));
+
+  // Item de doacao fixado no topo (so na primeira pagina e sem busca)
+  if (!search && skip === 0) {
+    metas.unshift({
+      id: DONATE_ID,
       type: "tv",
-      name: c.name,
-      poster: c.logo || LOGO,
+      name: DONATE_NAME,
+      poster: LOGO,
       posterShape: "square",
-      genres: [c.group]
-    }))
-  };
+      description: DONATE_DESC,
+      genres: ["💸 Apoie o ZinTV BR"],
+      links: [{ name: "💸 Apoiar via LivePix", category: "Donation", url: DONATE_URL }]
+    });
+  }
+
+  return { metas };
 });
 
 builder.defineMetaHandler(async ({ type, id }) => {
   if (type !== "tv") return { meta: null };
+
+  if (id === DONATE_ID) {
+    return {
+      meta: {
+        id: DONATE_ID,
+        type: "tv",
+        name: DONATE_NAME,
+        poster: LOGO,
+        posterShape: "square",
+        description: DONATE_DESC,
+        genres: ["💸 Apoie o ZinTV BR"],
+        links: [{ name: "💸 Apoiar via LivePix", category: "Donation", url: DONATE_URL }]
+      }
+    };
+  }
+
   if (!channels.length) await loadList();
 
   const c = channelFromId(id);
@@ -132,6 +169,20 @@ builder.defineMetaHandler(async ({ type, id }) => {
 
 builder.defineStreamHandler(async ({ type, id }) => {
   if (type !== "tv") return { streams: [] };
+
+  if (id === DONATE_ID) {
+    return {
+      streams: [
+        {
+          externalUrl: DONATE_URL,
+          name: "💸 LivePix",
+          title: DONATE_NAME,
+          description: "Apoie o ZinTV BR com uma doação via LivePix 💚"
+        }
+      ]
+    };
+  }
+
   if (!channels.length) await loadList();
 
   const c = channelFromId(id);
