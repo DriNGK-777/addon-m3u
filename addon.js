@@ -1,210 +1,37 @@
 const { addonBuilder, serveHTTP } = require("stremio-addon-sdk");
-const { parseM3U, groupContent, cleanTitleForTMDB } = require("./parse-m3u");
-const http = require("http");
+const { parseChannels, dedupeChannels } = require("./parse-m3u");
 
-const LOGO_SVG = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'>
-  <defs>
-    <linearGradient id='bg' x1='0%' y1='0%' x2='100%' y2='100%'>
-      <stop offset='0%' stop-color='#1a1a2e'/>
-      <stop offset='100%' stop-color='#0f3460'/>
-    </linearGradient>
-    <linearGradient id='txt' x1='0%' y1='0%' x2='100%' y2='0%'>
-      <stop offset='0%' stop-color='#00d4ff'/>
-      <stop offset='100%' stop-color='#0077ff'/>
-    </linearGradient>
-  </defs>
-  <rect width='256' height='256' rx='48' fill='url(#bg)'/>
-  <rect x='20' y='20' width='216' height='216' rx='36' fill='none' stroke='#00d4ff' stroke-width='3' stroke-opacity='0.3'/>
-  <text x='128' y='168' font-family='Arial Black,sans-serif' font-size='96' font-weight='900' text-anchor='middle' fill='url(#txt)'>M3U</text>
-</svg>`;
+const PORT = process.env.PORT || 7000;
 const LOGO = "https://i.imgur.com/bKRaWKQ.jpeg";
+const DEFAULT_LIST = "https://iptv-org.github.io/iptv/countries/br.m3u";
 
-const PORT         = process.env.PORT || 7000;
-const TMDB_API_KEY = process.env.TMDB_API_KEY;
-
+// Listas M3U configuradas (aceita varias, separadas por virgula)
 const M3U_URLS = process.env.M3U_URLS
-  ? process.env.M3U_URLS.split(",").map(u => u.trim())
+  ? process.env.M3U_URLS.split(",").map((u) => u.trim()).filter(Boolean)
   : [];
 
 const SINGLE_URL = process.env.M3U_URL;
 if (SINGLE_URL && !M3U_URLS.includes(SINGLE_URL)) M3U_URLS.push(SINGLE_URL);
 
-if (!M3U_URLS.length) {
-  console.error("❌ No configuraste M3U_URLS ni M3U_URL");
-  process.exit(1);
-}
-
-if (!TMDB_API_KEY) {
-  console.warn("⚠️  TMDB_API_KEY no configurada — los IDs IMDb no se resolverán");
-}
-
-const tmdbCache       = {};
-let movies            = [];
-let series            = {};
-const movieImdbIndex  = {};
-const seriesImdbIndex = {};
-
-function normalize(str = "") {
-  return str
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\b(19|20)\d{2}\b/g, "")
-    .replace(/1080p|720p|2160p|4k|hdr|webrip|bluray|x264|x265/gi, "")
-    .replace(/latino|castellano|dual|subtitulado|sub/gi, "")
-    .replace(/s\d{1,2}e\d{1,2}/gi, "")
-    .replace(/[^a-z0-9]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function chunks(arr, size) {
-  const result = [];
-  for (let i = 0; i < arr.length; i += size) result.push(arr.slice(i, i + size));
-  return result;
-}
-
-async function searchTMDB(title, type) {
-  if (!TMDB_API_KEY) return null;
-  const clean = normalize(cleanTitleForTMDB(title));
-  if (clean in tmdbCache) return tmdbCache[clean];
-  try {
-    const endpoint  = type === "series" ? "tv" : "movie";
-    const searchRes = await fetch(
-      `https://api.themoviedb.org/3/search/${endpoint}?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(clean)}&language=es-MX`
-    );
-    const searchData = await searchRes.json();
-    if (!searchData.results?.length) { tmdbCache[clean] = null; return null; }
-    const detailsRes = await fetch(
-      `https://api.themoviedb.org/3/${endpoint}/${searchData.results[0].id}/external_ids?api_key=${TMDB_API_KEY}`
-    );
-    const details = await detailsRes.json();
-    const imdb = details.imdb_id || null;
-    tmdbCache[clean] = imdb;
-    if (imdb) console.log(`✅ TMDB: "${clean}" → ${imdb}`);
-    return imdb;
-  } catch (err) {
-    console.error(`❌ TMDB error "${title}":`, err.message);
-    tmdbCache[clean] = null;
-    return null;
-  }
-}
-
-async function prefetchTMDBIds() {
-  if (!TMDB_API_KEY) return;
-
-  const movieList  = movies.filter(m => !m.id.startsWith("tt"));
-  const seriesList = Object.values(series).filter(s => !s.id.startsWith("tt"));
-
-  console.log(`⏳ Pre-carga TMDB: ${movieList.length} películas + ${seriesList.length} series`);
-
-  let resolvedMovies = 0;
-  for (const batch of chunks(movieList, 4)) {
-    await Promise.all(batch.map(async movie => {
-      try {
-        const imdb = await searchTMDB(movie.title, "movie");
-        if (imdb) { movieImdbIndex[imdb] = movie.id; movie.id = imdb; resolvedMovies++; }
-      } catch {}
-    }));
-    console.log(`🎬 Películas resueltas: ${resolvedMovies}/${movieList.length}`);
-    await sleep(400);
-  }
-  console.log("✅ Pre-carga de películas completada");
-
-  let resolvedSeries = 0;
-  for (const batch of chunks(seriesList, 4)) {
-    await Promise.all(batch.map(async show => {
-      try {
-        const imdb = await searchTMDB(show.title, "series");
-        if (imdb) { seriesImdbIndex[imdb] = show.id; show.id = imdb; resolvedSeries++; }
-      } catch {}
-    }));
-    console.log(`📺 Series resueltas: ${resolvedSeries}/${seriesList.length}`);
-    await sleep(400);
-  }
-  console.log("✅ Pre-carga de series completada");
-}
-
-async function loadList() {
-  let allItems = [];
-  for (const url of M3U_URLS) {
-    console.log(`📥 Descargando: ${url}`);
-    try {
-      const response = await fetch(url);
-      if (!response.ok) { console.error(`❌ HTTP ${response.status}: ${url}`); continue; }
-      const items = parseM3U(await response.text());
-      console.log(`📺 ${items.length} items en ${url}`);
-      allItems = allItems.concat(items);
-    } catch (err) {
-      console.error(`❌ Error descargando ${url}:`, err.message);
-    }
-  }
-  const grouped = groupContent(allItems);
-  movies = grouped.movies;
-  series = grouped.series;
-  console.log(`✅ ${movies.length} películas | ${Object.keys(series).length} series`);
-}
-
-// ─────────────────────────────────────────────
-// KEEP-ALIVE
-// - Espera 5 segundos antes del primer ping
-//   para dar tiempo al servidor de estar listo
-// - Corre en un setInterval independiente
-//   que NO se ve afectado por el prefetch TMDB
-// - Si el ping falla, lo loguea pero sigue intentando
-// ─────────────────────────────────────────────
-function startKeepAlive() {
-  function doPing() {
-    const req = http.get(`http://localhost:${PORT}/manifest.json`, res => {
-      console.log(`💓 Keep-alive OK (${res.statusCode})`);
-      res.resume();
-    });
-    req.on("error", err => {
-      console.error(`❌ Keep-alive error: ${err.message}`);
-    });
-    req.end();
-  }
-
-  // Primer ping después de 5 segundos (servidor ya listo)
-  setTimeout(() => {
-    console.log("💓 Primer ping keep-alive...");
-    doPing();
-    // Pings siguientes cada 14 minutos
-    setInterval(doPing, 14 * 60 * 1000);
-  }, 5000);
-
-  console.log("💓 Keep-alive configurado (primer ping en 5s, luego cada 14 min)");
-}
+if (!M3U_URLS.length) M3U_URLS.push(DEFAULT_LIST);
 
 const manifest = {
-  id:          "com.drinkzin.zintvbr",
-  version:     "1.0.0",
-  name:        "ZinTV BR",
-  description: "Canais, filmes e séries do Brasil. Feito por drinkzin.",
-  logo:        LOGO,
-  resources:   ["catalog", "stream", "meta"],
-  types:       ["movie", "series"],
+  id: "com.drinkzin.zintvbr",
+  version: "1.1.0",
+  name: "ZinTV BR",
+  description: "Canais de TV aberta do Brasil ao vivo. Feito por drinkzin.",
+  logo: LOGO,
+  resources: ["catalog", "meta", "stream"],
+  types: ["tv"],
+  idPrefixes: ["zintv:"],
   catalogs: [
     {
-      type:  "movie",
-      id:    "m3u_movies",
-      name:  "🎬 Filmes",
+      type: "tv",
+      id: "zintv_catalog",
+      name: "ZinTV BR",
       extra: [
         { name: "search", isRequired: false },
-        { name: "skip",   isRequired: false }
-      ]
-    },
-    {
-      type:  "series",
-      id:    "m3u_series",
-      name:  "📺 Séries",
-      extra: [
-        { name: "search", isRequired: false },
-        { name: "skip",   isRequired: false }
+        { name: "skip", isRequired: false }
       ]
     }
   ]
@@ -212,125 +39,121 @@ const manifest = {
 
 const builder = new addonBuilder(manifest);
 
+let channels = [];
+let lastLoad = 0;
+
+function channelId(c) {
+  return "zintv:" + Buffer.from(c.name + "|" + c.url).toString("base64url");
+}
+
+function channelFromId(id) {
+  const raw = id.startsWith("zintv:") ? id.slice(6) : id;
+  let decoded = "";
+  try {
+    decoded = Buffer.from(raw, "base64url").toString("utf8");
+  } catch (e) {
+    return null;
+  }
+  const [name, ...rest] = decoded.split("|");
+  const url = rest.join("|");
+  return channels.find((c) => c.name === name && c.url === url) || null;
+}
+
+async function loadList() {
+  const all = [];
+  for (const url of M3U_URLS) {
+    try {
+      console.log(`📡 Baixando lista: ${url}`);
+      const res = await fetch(url);
+      if (!res.ok) {
+        console.error(`❌ HTTP ${res.status}: ${url}`);
+        continue;
+      }
+      const text = await res.text();
+      const parsed = parseChannels(text);
+      console.log(`✅ ${parsed.length} canais em ${url}`);
+      all.push(...parsed);
+    } catch (err) {
+      console.error(`❌ Erro baixando ${url}:`, err.message);
+    }
+  }
+  channels = dedupeChannels(all);
+  lastLoad = Date.now();
+  console.log(`📺 Total: ${channels.length} canais carregados`);
+}
+
 builder.defineCatalogHandler(async ({ type, id, extra }) => {
-  const search = extra?.search ? normalize(extra.search) : null;
-  const skip   = parseInt(extra?.skip || "0", 10);
-  const PAGE   = 100;
+  if (type !== "tv" || id !== "zintv_catalog") return { metas: [] };
 
-  if (type === "movie" && id === "m3u_movies") {
-    let results = movies;
-    if (search) results = movies.filter(m => normalize(m.title).includes(search));
-    return { metas: results.slice(skip, skip + PAGE).map(movieToMeta) };
+  if (!channels.length) await loadList();
+
+  const search = extra && extra.search ? extra.search.toLowerCase() : "";
+  const skip = parseInt((extra && extra.skip) || "0", 10);
+  const PAGE = 100;
+
+  let list = channels;
+  if (search) {
+    list = list.filter((c) => c.name.toLowerCase().includes(search));
   }
 
-  if (type === "series" && id === "m3u_series") {
-    let results = Object.values(series);
-    if (search) results = results.filter(s => normalize(s.title).includes(search));
-    return { metas: results.slice(skip, skip + PAGE).map(seriesToMeta) };
-  }
+  const page = list.slice(skip, skip + PAGE);
 
-  return { metas: [] };
+  return {
+    metas: page.map((c) => ({
+      id: channelId(c),
+      type: "tv",
+      name: c.name,
+      poster: c.logo || LOGO,
+      posterShape: "square",
+      genres: [c.group]
+    }))
+  };
 });
 
 builder.defineMetaHandler(async ({ type, id }) => {
-  if (type === "movie") {
-    const slugKey = movieImdbIndex[id] || id;
-    let movie = movies.find(m => m.id === id || m.id === slugKey)
-      || movies.find(m => normalize(m.title) === normalize(id));
-    if (!movie) return { meta: null };
-    if (!movie.id.startsWith("tt")) {
-      const imdb = await searchTMDB(movie.title, "movie");
-      if (imdb) { movieImdbIndex[imdb] = movie.id; movie.id = imdb; }
-    }
-    return { meta: movieToFullMeta(movie) };
-  }
+  if (type !== "tv") return { meta: null };
+  if (!channels.length) await loadList();
 
-  if (type === "series") {
-    const slugKey = seriesImdbIndex[id] || id;
-    let show = series[slugKey] || series[id]
-      || Object.values(series).find(s => normalize(s.title) === normalize(id));
-    if (!show) return { meta: null };
-    if (!show.id.startsWith("tt")) {
-      const imdb = await searchTMDB(show.title, "series");
-      if (imdb) { seriesImdbIndex[imdb] = show.id; show.id = imdb; }
-    }
-    return { meta: seriesToFullMeta(show, show.id) };
-  }
+  const c = channelFromId(id);
+  if (!c) return { meta: null };
 
-  return { meta: null };
+  return {
+    meta: {
+      id: channelId(c),
+      type: "tv",
+      name: c.name,
+      poster: c.logo || LOGO,
+      posterShape: "square",
+      description: `Canal ao vivo • ${c.group}`,
+      genres: [c.group]
+    }
+  };
 });
 
 builder.defineStreamHandler(async ({ type, id }) => {
-  if (type === "movie") {
-    const slugKey = movieImdbIndex[id] || id;
-    const movie = movies.find(m => m.id === id || m.id === slugKey)
-      || movies.find(m => normalize(m.title) === normalize(id));
-    if (!movie) return { streams: [] };
-    return {
-      streams: movie.streams.map((s, i) => ({
-        url: s.url, name: "M3U", title: `Stream ${i + 1}`
-      }))
-    };
-  }
+  if (type !== "tv") return { streams: [] };
+  if (!channels.length) await loadList();
 
-  if (type === "series") {
-    const parts   = id.split(":");
-    const rawId   = parts[0];
-    const season  = parseInt(parts[1], 10);
-    const episode = parseInt(parts[2], 10);
-    const slugKey = seriesImdbIndex[rawId] || rawId;
-    const show = series[slugKey] || series[rawId]
-      || Object.values(series).find(s =>
-          normalize(s.title) === normalize(rawId) || s.id === rawId
-        );
-    if (!show) return { streams: [] };
-    const eps = show.episodes.filter(
-      e => e.season === season && e.episode === episode
-    );
-    return {
-      streams: eps.map((ep, i) => ({ url: ep.url, name: "M3U", title: `Stream ${i + 1}` }))
-    };
-  }
+  const c = channelFromId(id);
+  if (!c) return { streams: [] };
 
-  return { streams: [] };
-});
-
-function movieToMeta(m) {
-  return { id: m.id, type: "movie", name: m.title, poster: m.poster };
-}
-
-function movieToFullMeta(m) {
-  return { ...movieToMeta(m), description: "Película de tu lista M3U" };
-}
-
-function seriesToMeta(s) {
-  return { id: s.id, type: "series", name: s.title, poster: s.poster };
-}
-
-function seriesToFullMeta(s, resolvedId) {
   return {
-    id:     resolvedId,
-    type:   "series",
-    name:   s.title,
-    poster: s.poster,
-    videos: s.episodes.map(ep => ({
-      id:     `${resolvedId}:${ep.season}:${ep.episode}`,
-      title:  ep.title,
-      season: ep.season,
-      number: ep.episode
-    }))
+    streams: [
+      {
+        title: c.name,
+        url: c.url
+      }
+    ]
   };
-}
+});
 
 (async () => {
   await loadList();
   serveHTTP(builder.getInterface(), { port: PORT });
-  console.log(`🚀 Addon corriendo en puerto ${PORT}`);
+  console.log(`📺 ZinTV BR rodando na porta ${PORT}`);
 
-  // Keep-alive DESPUÉS de serveHTTP, espera 5s antes del primer ping
-  startKeepAlive();
-
-  // Prefetch TMDB corre en paralelo sin bloquear nada
-  console.log("⏳ Iniciando pre-carga de IDs TMDB en segundo plano...");
-  prefetchTMDBIds().catch(err => console.error("❌ Error en pre-carga:", err));
+  // Atualiza a lista a cada 30 minutos
+  setInterval(() => {
+    loadList().catch((e) => console.error("Erro ao atualizar lista:", e.message));
+  }, 30 * 60 * 1000);
 })();

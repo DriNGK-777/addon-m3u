@@ -1,7 +1,7 @@
 {
-  "name": "stremio-m3u-addon",
-  "version": "1.0.0",
-  "description": "Addon de Stremio para reproducir películas y series desde una lista M3U personal",
+  "name": "zintv-br",
+  "version": "1.1.0",
+  "description": "ZinTV BR - canais de TV aberta do Brasil ao vivo para Stremio. Feito por drinkzin.",
   "main": "addon.js",
   "scripts": {
     "start": "node addon.js"
