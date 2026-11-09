@@ -66,6 +66,44 @@ const CATALOG_MOVIES = "zintv_filmes";
 const CATALOG_SERIES = "zintv_series";
 const CATALOG_RADIOS = "zintv_radios"; // radios brasileiras ao vivo
 
+// ---------------------------------------------------------------------------
+// STREAMINGS (JustWatch) - cada servico vira 2 fileiras (filmes e series)
+// ---------------------------------------------------------------------------
+const PROVIDERS = {
+  nfx: { name: "Netflix", emoji: "🟥" },
+  gop: { name: "Globoplay", emoji: "🟠" },
+  mxx: { name: "Max", emoji: "🟦" },
+  dnp: { name: "Disney+", emoji: "🔷" },
+  prv: { name: "Prime Video", emoji: "🔵" },
+  atp: { name: "Apple TV+", emoji: "⚪" },
+  pmp: { name: "Paramount+", emoji: "🔹" },
+  ptv: { name: "Pluto TV", emoji: "🟣" },
+  cru: { name: "Crunchyroll", emoji: "🍥" },
+  lke: { name: "Looke", emoji: "🟡" }
+};
+
+const STREAMING = (process.env.STREAMING_PROVIDERS || "nfx,gop,mxx,dnp,prv,ptv")
+  .split(",")
+  .map((s) => s.trim())
+  .filter((s) => PROVIDERS[s])
+  .map((id) => ({ id, ...PROVIDERS[id] }));
+
+const streamingCatalogs = [];
+for (const p of STREAMING) {
+  streamingCatalogs.push({
+    type: "movie",
+    id: `zintv_st_${p.id}_movie`,
+    name: `${p.emoji} ${p.name} · Filmes`,
+    extra: [{ name: "skip", isRequired: false }]
+  });
+  streamingCatalogs.push({
+    type: "series",
+    id: `zintv_st_${p.id}_series`,
+    name: `${p.emoji} ${p.name} · Séries`,
+    extra: [{ name: "skip", isRequired: false }]
+  });
+}
+
 const extra = [
   { name: "search", isRequired: false },
   { name: "skip", isRequired: false }
@@ -73,9 +111,10 @@ const extra = [
 
 const manifest = {
   id: "com.drinkzin.zintvbr",
-  version: "1.6.0",
+  version: "1.7.0",
   name: "ZinTV BR",
-  description: "Canais de TV aberta e rádios do Brasil ao vivo. Feito por drinkzin.",
+  description:
+    "Canais de TV aberta, rádios e catálogos dos streamings do Brasil. Feito por drinkzin.",
   logo: LOGO,
   resources: ["catalog", "meta", "stream"],
   types: ["tv", "movie", "series"],
@@ -84,6 +123,7 @@ const manifest = {
     { type: "tv", id: CATALOG_DONATE, name: "🤝 Apoie o ZinTV BR" },
     { type: "tv", id: CATALOG_CHANNELS, name: "ZinTV BR", extra },
     { type: "tv", id: CATALOG_RADIOS, name: "📻 Rádios ao Vivo", extra },
+    ...streamingCatalogs,
     { type: "movie", id: CATALOG_MOVIES, name: "🎬 Filmes", extra },
     { type: "series", id: CATALOG_SERIES, name: "📺 Séries", extra }
   ]
@@ -386,6 +426,127 @@ function metaOfRadio(r) {
 }
 
 // ---------------------------------------------------------------------------
+// JUSTWATCH (catalogo dos streamings - dados publicos, sem chave)
+// ---------------------------------------------------------------------------
+const JW_URL = "https://apis.justwatch.com/graphql";
+const JW_TTL = 6 * 60 * 60 * 1000;
+const jwCache = new Map();
+const jwPending = new Map();
+
+const JW_QUERY =
+  "query GetPopularTitles($country: Country! $popularTitlesFilter: TitleFilter " +
+  "$popularAfterCursor: String $popularTitlesSortBy: PopularTitlesSorting! = POPULAR " +
+  "$first: Int! $language: Language! $offset: Int = 0 $sortRandomSeed: Int! = 0) { " +
+  "popularTitles(country: $country filter: $popularTitlesFilter offset: $offset " +
+  "after: $popularAfterCursor sortBy: $popularTitlesSortBy first: $first " +
+  "sortRandomSeed: $sortRandomSeed) { totalCount edges { node { objectId objectType " +
+  "content(country: $country language: $language) { externalIds { imdbId } title " +
+  "originalReleaseYear posterUrl scoring { imdbScore } } } } } }";
+
+function posterIdOf(url) {
+  const m = String(url || "").match(/\/poster\/([0-9]+)\//);
+  return m ? m[1] : null;
+}
+
+function streamingRef(id) {
+  if (!id || !id.startsWith("zintv_st_")) return null;
+  const m = String(id).match(/^zintv_st_([a-z0-9]+)_(movie|series)$/);
+  if (!m) return null;
+  const p = STREAMING.find((x) => x.id === m[1]);
+  if (!p) return null;
+  return { provider: p, type: m[2] };
+}
+
+async function jwFetch(pkg, jwType, skip) {
+  const key = pkg + "|" + jwType + "|" + skip;
+  const hit = jwCache.get(key);
+  if (hit && Date.now() - hit.t < JW_TTL) return hit.data;
+  if (jwPending.has(key)) return jwPending.get(key);
+
+  const task = (async () => {
+    try {
+      const res = await fetch(JW_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        },
+        body: JSON.stringify({
+          operationName: "GetPopularTitles",
+          variables: {
+            popularTitlesSortBy: "TRENDING",
+            first: 100,
+            platform: "WEB",
+            sortRandomSeed: 0,
+            popularAfterCursor: "",
+            offset: skip,
+            popularTitlesFilter: {
+              ageCertifications: [],
+              excludeGenres: [],
+              excludeProductionCountries: [],
+              genres: [],
+              objectTypes: [jwType],
+              productionCountries: [],
+              packages: [pkg],
+              excludeIrrelevantTitles: false,
+              presentationTypes: [],
+              monetizationTypes: []
+            },
+            language: "pt",
+            country: "BR"
+          },
+          query: JW_QUERY
+        }),
+        signal: AbortSignal.timeout(20000)
+      });
+      if (!res.ok) {
+        console.error("❌ JustWatch " + pkg + " HTTP " + res.status);
+        return [];
+      }
+      const json = await res.json();
+      if (json.errors) {
+        console.error("❌ JustWatch " + pkg + ": " + JSON.stringify(json.errors).slice(0, 200));
+        return [];
+      }
+      const edges = (json.data && json.data.popularTitles && json.data.popularTitles.edges) || [];
+      return edges
+        .map((e) => {
+          const c = e.node && e.node.content;
+          if (!c) return null;
+          const imdb = c.externalIds && c.externalIds.imdbId;
+          if (!imdb) return null;
+          const pid = posterIdOf(c.posterUrl);
+          return {
+            id: imdb,
+            type: jwType === "MOVIE" ? "movie" : "series",
+            name: c.title,
+            poster: pid
+              ? "https://images.justwatch.com/poster/" + pid + "/s332/img"
+              : "https://live.metahub.space/poster/medium/" + imdb + "/img",
+            posterShape: "poster",
+            releaseInfo: c.originalReleaseYear ? String(c.originalReleaseYear) : undefined,
+            imdbRating: c.scoring && c.scoring.imdbScore ? c.scoring.imdbScore : undefined
+          };
+        })
+        .filter(Boolean);
+    } catch (err) {
+      console.error("❌ JustWatch " + pkg + ": " + err.message);
+      return [];
+    }
+  })();
+
+  jwPending.set(key, task);
+  try {
+    const data = await task;
+    jwCache.set(key, { t: Date.now(), data });
+    return data;
+  } finally {
+    jwPending.delete(key);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // CATALOGO
 // ---------------------------------------------------------------------------
 function metaOfChannel(c) {
@@ -424,6 +585,20 @@ function metaOfSeries(s) {
 builder.defineCatalogHandler(async ({ type, id, extra: ex }) => {
   // Catalogo dedicado: so o botao de doacao
   if (id === CATALOG_DONATE) return { metas: [donateMeta(type)] };
+
+  // Fileiras dos streamings (JustWatch)
+  const stRef = streamingRef(id);
+  if (stRef) {
+    const skipJw = parseInt((ex && ex.skip) || "0", 10) || 0;
+    const metas = await jwFetch(
+      stRef.provider.id,
+      stRef.type === "movie" ? "MOVIE" : "SHOW",
+      skipJw
+    );
+    // LivePix SEMPRE no topo
+    if (skipJw === 0) metas.unshift(donateMeta(type));
+    return { metas };
+  }
 
   const isRadio = type === "tv" && id === CATALOG_RADIOS;
   if (isRadio) {

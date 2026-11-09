@@ -8,7 +8,10 @@ Addon de **TV aberta e rádios do Brasil ao vivo** para o Stremio. Feito por **d
 - Mostra os canais em uma grade no Stremio, com logo, nome e grupo.
 - Reproduz o canal ao vivo ao clicar.
 - **📻 Rádios ao Vivo**: mais de 1.100 rádios brasileiras, vindas da API pública Radio Browser (sem chave, sem custo).
+- **Catálogos dos streamings**: fileiras de filmes e séries da Netflix, Globoplay, Max, Disney+, Prime Video e Pluto TV, com dados públicos do JustWatch (sem chave).
 - **🤝 Apoie o ZinTV BR**: card fixo no topo de todos os catálogos e primeiro item da lista de streams, levando ao LivePix.
+
+> Os catálogos dos streamings são só de **descoberta**: eles mostram o que está disponível em cada serviço, mas não entregam o vídeo. Para assistir, use o serviço oficial ou outro addon de sua escolha.
 
 ## Capas das rádios
 
@@ -32,6 +35,7 @@ https://SEU-SERVICO.onrender.com/manifest.json
 |----------|-----------|
 | `M3U_URL` | URL de uma lista M3U (opcional — se vazio, usa a lista do iptv-org Brasil) |
 | `M3U_URLS` | Várias listas separadas por vírgula (opcional) |
+| `STREAMING_PROVIDERS` | Quais streamings aparecem (padrão: `nfx,gop,mxx,dnp,prv,ptv`). Opções: `nfx` Netflix, `gop` Globoplay, `mxx` Max, `dnp` Disney+, `prv` Prime Video, `atp` Apple TV+, `pmp` Paramount+, `ptv` Pluto TV, `cru` Crunchyroll, `lke` Looke |
 
 Exemplos de listas de canais abertos do Brasil:
 
