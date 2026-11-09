@@ -1,5 +1,6 @@
 ﻿const { addonBuilder, serveHTTP } = require("stremio-addon-sdk");
 const { parseChannels, dedupeChannels } = require("./parse-m3u");
+const { FILMS, TV } = require("./content");
 
 const PORT = process.env.PORT || 7000;
 const LOGO = "https://i.imgur.com/bKRaWKQ.jpeg";
@@ -65,6 +66,8 @@ const CATALOG_DONATE = "zintv_apoie"; // catalogo so com o botao de doacao
 const CATALOG_MOVIES = "zintv_filmes";
 const CATALOG_SERIES = "zintv_series";
 const CATALOG_RADIOS = "zintv_radios"; // radios brasileiras ao vivo
+const CATALOG_CINEMA = "zintv_cinema"; // filmes de dominio publico (Archive.org)
+const CATALOG_MUNDO = "zintv_tv_mundo"; // emissoras publicas internacionais (HLS)
 
 // ---------------------------------------------------------------------------
 // STREAMINGS (JustWatch) - cada servico vira 2 fileiras (filmes e series)
@@ -109,12 +112,20 @@ const extra = [
   { name: "skip", isRequired: false }
 ];
 
+const extraCinema = [
+  {
+    name: "genre",
+    options: ["Comédia", "Terror", "Noir", "Suspense", "Ficção científica", "Faroeste", "Animação", "Nacional"]
+  },
+  ...extra
+];
+
 const manifest = {
   id: "com.drinkzin.zintvbr",
-  version: "1.7.0",
+  version: "1.8.0",
   name: "ZinTV BR",
   description:
-    "Canais de TV aberta, rádios e catálogos dos streamings do Brasil. Feito por drinkzin.",
+    "Canais de TV aberta, rádios, cinema grátis e TV do mundo, além dos catálogos dos streamings do Brasil. Feito por drinkzin.",
   logo: LOGO,
   resources: ["catalog", "meta", "stream"],
   types: ["tv", "movie", "series"],
@@ -123,9 +134,9 @@ const manifest = {
     { type: "tv", id: CATALOG_DONATE, name: "🤝 Apoie o ZinTV BR" },
     { type: "tv", id: CATALOG_CHANNELS, name: "ZinTV BR", extra },
     { type: "tv", id: CATALOG_RADIOS, name: "📻 Rádios ao Vivo", extra },
-    ...streamingCatalogs,
-    { type: "movie", id: CATALOG_MOVIES, name: "🎬 Filmes", extra },
-    { type: "series", id: CATALOG_SERIES, name: "📺 Séries", extra }
+    { type: "movie", id: CATALOG_CINEMA, name: "📼 Cinema Grátis", extra: extraCinema },
+    { type: "tv", id: CATALOG_MUNDO, name: "🌍 TV do Mundo", extra },
+    ...streamingCatalogs
   ]
 };
 
@@ -547,6 +558,49 @@ async function jwFetch(pkg, jwType, skip) {
 }
 
 // ---------------------------------------------------------------------------
+// CINEMA (dominio publico) + TV DO MUNDO (HLS oficial)
+// ---------------------------------------------------------------------------
+const ARCHIVE_DL = "https://archive.org/download/";
+const ARCHIVE_IMG = "https://archive.org/services/img/";
+
+const filmId = (f) => "zintv:cine:" + f.id;
+const filmUrl = (f) => ARCHIVE_DL + f.id + "/" + encodeURIComponent(f.file);
+const worldId = (t) => "zintv:mundo:" + Buffer.from(t.url).toString("base64url");
+const worldLogo = (t) => "https://www.google.com/s2/favicons?domain=" + t.site + "&sz=256";
+
+function metaOfFilm(f) {
+  return {
+    id: filmId(f),
+    type: "movie",
+    name: f.name,
+    poster: ARCHIVE_IMG + f.id,
+    background: ARCHIVE_IMG + f.id,
+    posterShape: "poster",
+    releaseInfo: String(f.year),
+    genres: [f.genre, "Domínio público"],
+    description:
+      "📼 " + f.desc + "\n\n🎬 " + f.name + " (" + f.year + ") • " + f.genre +
+      "\n✅ Domínio público / licença livre • Fonte: Archive.org"
+  };
+}
+
+function metaOfWorld(t) {
+  return {
+    id: worldId(t),
+    type: "tv",
+    name: "🌍 " + t.name,
+    poster: worldLogo(t),
+    background: worldLogo(t),
+    posterShape: "square",
+    genres: ["🌍 TV do Mundo", t.country],
+    description:
+      "🌍 " + t.name + " • " + t.country +
+      "\n📡 Transmissão oficial ao vivo (HLS)" +
+      "\n✅ Emissora pública / sinal aberto na internet"
+  };
+}
+
+// ---------------------------------------------------------------------------
 // CATALOGO
 // ---------------------------------------------------------------------------
 function metaOfChannel(c) {
@@ -597,6 +651,38 @@ builder.defineCatalogHandler(async ({ type, id, extra: ex }) => {
     );
     // LivePix SEMPRE no topo
     if (skipJw === 0) metas.unshift(donateMeta(type));
+    return { metas };
+  }
+
+  // Cinema de dominio publico (Archive.org)
+  if (type === "movie" && id === CATALOG_CINEMA) {
+    const busca = String((ex && ex.search) || "").trim();
+    const gen = String((ex && ex.genre) || "").trim();
+    const skipC = parseInt((ex && ex.skip) || "0", 10) || 0;
+    let lista = FILMS;
+    if (gen) lista = lista.filter((f) => norm(f.genre) === norm(gen));
+    if (busca) {
+      const q = norm(busca);
+      lista = lista.filter((f) => norm(f.name).includes(q) || norm(f.desc).includes(q));
+    }
+    const metas = lista.slice(skipC, skipC + 100).map(metaOfFilm);
+    // LivePix SEMPRE no topo
+    if (skipC === 0 && (!busca || donateQuery(busca))) metas.unshift(donateMeta("movie"));
+    return { metas };
+  }
+
+  // TV do Mundo (emissoras publicas internacionais)
+  if (type === "tv" && id === CATALOG_MUNDO) {
+    const busca = String((ex && ex.search) || "").trim();
+    const skipW = parseInt((ex && ex.skip) || "0", 10) || 0;
+    let lista = TV;
+    if (busca) {
+      const q = norm(busca);
+      lista = lista.filter((t) => norm(t.name).includes(q) || norm(t.country).includes(q));
+    }
+    const metas = lista.slice(skipW, skipW + 100).map(metaOfWorld);
+    // LivePix SEMPRE no topo
+    if (skipW === 0 && (!busca || donateQuery(busca))) metas.unshift(donateMeta("tv"));
     return { metas };
   }
 
@@ -653,6 +739,20 @@ builder.defineCatalogHandler(async ({ type, id, extra: ex }) => {
 // ---------------------------------------------------------------------------
 builder.defineMetaHandler(async ({ type, id }) => {
   if (id === DONATE_ID) return { meta: donateMeta(type) };
+
+  // Cinema de dominio publico
+  if (id.startsWith("zintv:cine:")) {
+    const f = FILMS.find((x) => filmId(x) === id);
+    if (!f) return { meta: null };
+    return { meta: { ...metaOfFilm(f), links: DONATE_LINKS } };
+  }
+
+  // TV do Mundo
+  if (id.startsWith("zintv:mundo:")) {
+    const t = TV.find((x) => worldId(x) === id);
+    if (!t) return { meta: null };
+    return { meta: { ...metaOfWorld(t), links: DONATE_LINKS } };
+  }
 
   if (!channels.length) await loadList();
 
@@ -735,6 +835,40 @@ builder.defineMetaHandler(async ({ type, id }) => {
 builder.defineStreamHandler(async ({ type, id }) => {
   // O proprio botao de doacao
   if (id === DONATE_ID) return { streams: [donateStream] };
+
+  // Cinema de dominio publico (video real, sem tela preta)
+  if (id.startsWith("zintv:cine:")) {
+    const f = FILMS.find((x) => filmId(x) === id);
+    if (!f) return { streams: [{ ...donateStream }] };
+    return {
+      streams: [
+        { ...donateStream },
+        {
+          name: "📼 Archive.org",
+          title: `${f.name} (${f.year})\nDomínio público`,
+          url: filmUrl(f),
+          behaviorHints: { notWebReady: false, bingeGroup: "zintv-cinema" }
+        }
+      ]
+    };
+  }
+
+  // TV do Mundo (HLS oficial)
+  if (id.startsWith("zintv:mundo:")) {
+    const t = TV.find((x) => worldId(x) === id);
+    if (!t) return { streams: [{ ...donateStream }] };
+    return {
+      streams: [
+        { ...donateStream },
+        {
+          name: "🌍 Ao vivo",
+          title: `${t.name}\n${t.country} • sinal oficial`,
+          url: t.url,
+          behaviorHints: { notWebReady: false, bingeGroup: "zintv-mundo" }
+        }
+      ]
+    };
+  }
 
   // Radio ao vivo
   const rr = radioRef(id);

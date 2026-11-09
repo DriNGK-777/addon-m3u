@@ -1,6 +1,6 @@
 # ZinTV BR
 
-Addon de **TV aberta e rádios do Brasil ao vivo** para o Stremio. Feito por **drinkzin**.
+Addon de **TV aberta, rádios, cinema grátis e TV do mundo** para o Stremio. Feito por **drinkzin**.
 
 ## O que ele faz
 
@@ -8,10 +8,22 @@ Addon de **TV aberta e rádios do Brasil ao vivo** para o Stremio. Feito por **d
 - Mostra os canais em uma grade no Stremio, com logo, nome e grupo.
 - Reproduz o canal ao vivo ao clicar.
 - **📻 Rádios ao Vivo**: mais de 1.100 rádios brasileiras, vindas da API pública Radio Browser (sem chave, sem custo).
+- **📼 Cinema Grátis**: filmes em domínio público ou licença livre do Archive.org, com vídeo real (MP4) e filtro por gênero.
+- **🌍 TV do Mundo**: emissoras públicas/internacionais que transmitem HLS aberto (DW, NASA TV, France 24, Al Jazeera, TRT World, Arirang, CNA, Bloomberg).
 - **Catálogos dos streamings**: fileiras de filmes e séries da Netflix, Globoplay, Max, Disney+, Prime Video e Pluto TV, com dados públicos do JustWatch (sem chave).
 - **🤝 Apoie o ZinTV BR**: card fixo no topo de todos os catálogos e primeiro item da lista de streams, levando ao LivePix.
 
 > Os catálogos dos streamings são só de **descoberta**: eles mostram o que está disponível em cada serviço, mas não entregam o vídeo. Para assistir, use o serviço oficial ou outro addon de sua escolha.
+
+## Cinema Grátis
+
+Filmes cuja obra já caiu em domínio público (ou tem licença livre), hospedados no Archive.org. Como são arquivos MP4 diretos, o Stremio reproduz com imagem normalmente — sem a tela preta das rádios.
+
+Gêneros disponíveis: Comédia, Terror, Noir, Suspense, Ficção científica, Faroeste, Animação e Nacional.
+
+## TV do Mundo
+
+Emissoras públicas e internacionais que publicam o próprio sinal em HLS aberto. São canais legais, sem IPTV pirata. A lista pode mudar com o tempo, pois as emissoras trocam as URLs de tempos em tempos.
 
 ## Capas das rádios
 
@@ -55,6 +67,8 @@ Depois abra `http://127.0.0.1:7000/manifest.json` no Stremio.
 
 - Apenas canais abertos/públicos. Canais fechados (Globo, SBT, ESPN, Telecine etc.) não estão em listas gratuitas legais.
 - As rádios vêm da API pública Radio Browser e são apenas as que respondem em **HTTPS** (rádios só-HTTP costumam falhar no Stremio).
+- O Cinema Grátis usa apenas obras em domínio público/licença livre do Archive.org; o primeiro play pode demorar alguns segundos, pois o arquivo vem de um servidor público.
+- Os canais da TV do Mundo são sinais oficiais das próprias emissoras; algumas URLs podem mudar sem aviso.
 - Alguns links de canais podem cair com o tempo, pois as listas são mantidas pela comunidade.
 - No plano gratuito do Render, o serviço "hiberna" após inatividade (a primeira abertura pode demorar ~50s).
 

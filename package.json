@@ -1,7 +1,7 @@
 {
   "name": "zintv-br",
-  "version": "1.7.0",
-  "description": "ZinTV BR - canais de TV aberta do Brasil ao vivo para Stremio. Feito por drinkzin.",
+  "version": "1.8.0",
+  "description": "ZinTV BR - TV aberta, rádios, cinema grátis e TV do mundo para Stremio. Feito por drinkzin.",
   "main": "addon.js",
   "scripts": {
     "start": "node addon.js"
