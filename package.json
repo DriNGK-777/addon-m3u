@@ -1,6 +1,6 @@
 {
   "name": "zintv-br",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "ZinTV BR - TV aberta, rádios, cinema grátis e TV do mundo para Stremio. Feito por drinkzin.",
   "main": "addon.js",
   "scripts": {

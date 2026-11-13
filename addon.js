@@ -122,8 +122,14 @@ const extraCinema = [
 
 const manifest = {
   id: "com.drinkzin.zintvbr",
-  version: "1.8.0",
+  version: "1.8.1",
   name: "ZinTV BR",
+  // Assinatura do addon (Stremio Addons) - verifica a autoria na listagem publica
+  stremioAddonsConfig: {
+    issuer: "https://stremio-addons.net",
+    signature:
+      "eyJhbGciOiJkaXIiLCJlbmMiOiJBMTI4Q0JDLUhTMjU2In0..XP7MhsAFur--M2bwLpG96Q.N_F87ARnSJduCEuAYjm81FoROfMbeIzLmeaJzWOp-1ps-BzI9SDMPkfO-h0i9WRIc9_tHzIiSwgHfSbGSU-GCqPMP9PnykgreFrn_yZUTjf6wucNTkbigGcwsdG-PQkh.WjmAW5nSbTdQgYbKTjoAHw"
+  },
   description:
     "Canais de TV aberta, rádios, cinema grátis e TV do mundo, além dos catálogos dos streamings do Brasil. Feito por drinkzin.",
   logo: LOGO,
